@@ -1406,7 +1406,7 @@ let chartPeriod = 'last8';
 const kmDone = d => (d.realKm != null ? d.realKm : estKm(d));
 const paceStr = sec => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 const niceMax = v => { if (v <= 0) return 4; const raw = v / 4, p = Math.pow(10, Math.floor(Math.log10(raw)));
-  const step = [1, 2, 2.5, 5, 10].map(m => m * p).find(st => st >= raw); return step * 4; };
+  const step = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map(m => m * p).find(st => st >= raw - 1e-9); return step * 4; };
 const wkLabel = w => { const d = fromIso(w.weekStart); return `${d.getDate()}/${d.getMonth() + 1}`; };
 
 function chartWeeks() {
@@ -1432,7 +1432,7 @@ function frame(n, maxV, { W = 640, H = 230, fmt = v => v, invert = false, minV =
 }
 const xLabels = (f, items, every) => items.map((it, k) => (k % every === 0 || k === items.length - 1)
   ? `<text x="${f.x(k)}" y="${f.H - 8}" text-anchor="middle" font-size="11" fill="${CH.txt}">${wkLabel(it.w)}</text>` : '').join('');
-const card = (title, sub, body, legend = '') => `<article class="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+const card = (title, sub, body, legend = '') => `<article class="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 flex flex-col">
   <div class="flex items-start justify-between gap-2 mb-2"><div><h3 class="font-cond italic text-xl font-extrabold text-navy-600 leading-tight">${title}</h3>
   <p class="text-[13px] text-slate-500">${sub}</p></div></div>${body}${legend ? `<div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-slate-500">${legend}</div>` : ''}</article>`;
 const lg = (color, label, shape = 'sq') => `<span class="inline-flex items-center gap-1.5"><i style="background:${color};width:10px;height:${shape === 'ln' ? 3 : 10}px;border-radius:${shape === 'dot' ? 99 : 2}px;display:inline-block"></i>${label}</span>`;
@@ -1488,27 +1488,33 @@ function chartLong(items) {
     s, lg(CH.mag, 'Real', 'ln') + lg('#CBD5E1', 'Plan', 'ln') + lg(CH.navy, 'Distancia de carrera', 'ln'));
 }
 
-/* 3 · Mapa de constancia (todo el plan) */
+/* 3 · Mapa de constancia (todo el plan, en tiras de 16 semanas para que quepa en la tarjeta) */
 function chartHeat() {
-  const n = state.weeks.length, cell = 13, gap = 3, L = 26, T = 18;
-  const W = L + n * (cell + gap), H = T + 7 * (cell + gap) + 4, t = todayIso();
-  let s = `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" style="min-width:${W}px" role="img">`;
-  ['L', 'X', 'S'].forEach((l, k) => s += `<text x="0" y="${T + [0, 2, 5][k] * (cell + gap) + 10}" font-size="10" fill="${CH.txt}">${l}</text>`);
-  let lastM = -1;
-  state.weeks.forEach((w, i) => {
-    const m = fromIso(w.weekStart).getMonth();
-    if (m !== lastM) { s += `<text x="${L + i * (cell + gap)}" y="11" font-size="10" fill="${CH.txt}">${MONTHS[m].slice(0, 3)}</text>`; lastM = m; }
-    w.days.forEach((d, j) => {
-      const col = d.blocked ? '#E2E8F0' : d.isRest ? CH.rest : d.status === 'done' ? CH.ok : d.status === 'failed' ? CH.bad
-        : d.race ? CH.navy : d.date < t ? '#FBCFE8' : isOptional(d) ? '#FCE7F3' : '#F9A8D4';
-      s += `<rect x="${L + i * (cell + gap)}" y="${T + j * (cell + gap)}" width="${cell}" height="${cell}" rx="3" fill="${col}" ${d.date === t ? `stroke="${CH.navy}" stroke-width="2"` : ''}>
-        <title>${fmtDay(d)} · ${escapeHtml(d.blocked ? 'No disponible' : d.isRest ? 'Descanso' : d.title)} · ${STATUS[d.status]?.label || ''}</title></rect>`;
+  const PER = (document.getElementById('chartsBox')?.clientWidth || 0) >= 900 ? 24 : 16, cell = 14, gap = 3, L = 18, t = todayIso();
+  const strips = [];
+  for (let k = 0; k < state.weeks.length; k += PER) strips.push(state.weeks.slice(k, k + PER));
+  const stripH = 16 + 7 * (cell + gap);
+  const W = L + PER * (cell + gap), H = strips.length * (stripH + 10);
+  let s = `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img">`;
+  strips.forEach((weeks, si) => {
+    const y0 = si * (stripH + 10);
+    ['L', 'X', 'S'].forEach((l, k) => s += `<text x="0" y="${y0 + 16 + [0, 2, 5][k] * (cell + gap) + 11}" font-size="10" fill="${CH.txt}">${l}</text>`);
+    let lastM = -1;
+    weeks.forEach((w, i) => {
+      const m = fromIso(w.weekStart).getMonth();
+      if (m !== lastM) { s += `<text x="${L + i * (cell + gap)}" y="${y0 + 11}" font-size="10" fill="${CH.txt}">${MONTHS[m].slice(0, 3)}</text>`; lastM = m; }
+      w.days.forEach((d, j) => {
+        const col = d.blocked ? '#E2E8F0' : d.isRest ? CH.rest : d.status === 'done' ? CH.ok : d.status === 'failed' ? CH.bad
+          : d.race ? CH.navy : d.date < t ? '#FBCFE8' : isOptional(d) ? '#FCE7F3' : '#F9A8D4';
+        s += `<rect x="${L + i * (cell + gap)}" y="${y0 + 16 + j * (cell + gap)}" width="${cell}" height="${cell}" rx="3" fill="${col}" ${d.date === t ? `stroke="${CH.navy}" stroke-width="2"` : ''}>
+          <title>${fmtDay(d)} · ${escapeHtml(d.blocked ? 'No disponible' : d.isRest ? 'Descanso' : d.title)} · ${STATUS[d.status]?.label || ''}</title></rect>`;
+      });
     });
   });
   s += '</svg>';
   const all = state.weeks.flatMap(w => w.days).filter(d => !d.isRest);
   return card('Mapa de constancia', `${all.filter(d => d.status === 'done').length} de ${all.length} sesiones del plan completadas`,
-    `<div class="overflow-x-auto">${s}</div>`, lg(CH.ok, 'Hecha') + lg(CH.bad, 'Fallada') + lg('#F9A8D4', 'Obligatoria pendiente') + lg('#FCE7F3', 'Opcional') + lg(CH.rest, 'Descanso') + lg(CH.navy, 'Carrera'));
+    s, lg(CH.ok, 'Hecha') + lg(CH.bad, 'Fallada') + lg('#F9A8D4', 'Obligatoria') + lg('#FCE7F3', 'Opcional') + lg(CH.rest, 'Descanso') + lg(CH.navy, 'Carrera'));
 }
 
 /* 4 · Cumplimiento por fase (anillos) */
@@ -1537,7 +1543,7 @@ function chartFeel(items) {
   let body;
   if (!any) body = empty('Aún no hay sensaciones registradas.<br>Aparecerán al completar sesiones.');
   else {
-    const f = frame(items.length, Math.max(4, ...rows.map(r => r.fresh + r.normal + r.exhausted)), { fmt: v => Math.round(v), W: 380, H: 240 });
+    const f = frame(items.length, Math.max(4, ...rows.map(r => r.fresh + r.normal + r.exhausted)), { fmt: v => Math.round(v) });
     let s = f.open;
     rows.forEach((r, k) => {
       const bw = Math.min(f.bw * 0.6, 28), x = f.x(k) - bw / 2; let acc = 0;
@@ -1547,7 +1553,7 @@ function chartFeel(items) {
         acc += r[key];
       });
     });
-    s += xLabels(f, items, Math.ceil(items.length / 5)) + '</svg>';
+    s += xLabels(f, items, Math.ceil(items.length / 10)) + '</svg>';
     body = s;
   }
   const exh = rows.slice(-3).reduce((a, r) => a + r.exhausted, 0);
@@ -1560,7 +1566,7 @@ function chartPace() {
   const q = state.weeks.flatMap(w => w.days).filter(d => d.status === 'done' && d.realPace && (/^Calidad|Larga|MEDIA/i.test(d.title)));
   if (!q.length) return card('Ritmo medio', 'Calidad y tiradas largas', empty('Apunta el ritmo medio al registrar una sesión<br>y verás aquí tu evolución frente al 5:12 objetivo.'));
   const vals = q.map(d => d.realPace), lo = Math.min(...vals, 300) - 15, hi = Math.max(...vals, 330) + 15;
-  const f = frame(q.length, hi, { minV: lo, invert: true, fmt: paceStr, W: 380, H: 240 });
+  const f = frame(q.length, hi, { minV: lo, invert: true, fmt: paceStr });
   let s = f.open + `<line x1="${f.L}" x2="${f.W - 10}" y1="${f.y(312)}" y2="${f.y(312)}" stroke="${CH.navy}" stroke-dasharray="4 4" stroke-width="1.5"/>
     <text x="${f.L + 4}" y="${f.y(312) - 6}" text-anchor="start" font-size="11" font-weight="700" fill="${CH.navy}">Objetivo 5:12</text>`;
   const isQ = d => /^Calidad/.test(d.title);
@@ -1569,7 +1575,7 @@ function chartPace() {
     if (pts.length > 1) s += `<path d="${pts.map(([d, k], j) => `${j ? 'L' : 'M'}${f.x(k)},${f.y(d.realPace)}`).join(' ')}" fill="none" stroke="${col}" stroke-opacity=".35" stroke-width="2"/>`;
   });
   q.forEach((d, k) => s += `<circle cx="${f.x(k)}" cy="${f.y(d.realPace)}" r="5" fill="${isQ(d) ? CH.mag : CH.navy}" stroke="#fff" stroke-width="2"><title>${fmtDay(d)} · ${escapeHtml(d.title)} · ${paceStr(d.realPace)}/km</title></circle>`);
-  q.forEach((d, k) => { if (k % Math.ceil(q.length / 5) === 0 || k === q.length - 1) s += `<text x="${f.x(k)}" y="${f.H - 8}" text-anchor="middle" font-size="11" fill="${CH.txt}">${fromIso(d.date).getDate()}/${fromIso(d.date).getMonth() + 1}</text>`; });
+  q.forEach((d, k) => { if (k % Math.ceil(q.length / 8) === 0 || k === q.length - 1) s += `<text x="${f.x(k)}" y="${f.H - 8}" text-anchor="middle" font-size="11" fill="${CH.txt}">${fromIso(d.date).getDate()}/${fromIso(d.date).getMonth() + 1}</text>`; });
   s += '</svg>';
   return card('Ritmo medio', 'Más arriba = más rápido', s, lg(CH.mag, 'Calidad', 'dot') + lg(CH.navy, 'Tirada larga', 'dot'));
 }
@@ -1579,9 +1585,7 @@ function renderCharts() {
   const items = chartWeeks();
   const btn = (k, l) => `<button data-cp="${k}" class="px-3 py-1.5 rounded-full text-xs font-bold ${chartPeriod === k ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-300 text-slate-600'}">${l}</button>`;
   el.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-3">${btn('last8', 'Últimas 8 semanas')}${btn('phase', 'Fase actual')}${btn('all', 'Todo el plan')}</div>
-    <div class="grid gap-3 lg:grid-cols-2">${chartKm(items)}${chartLong(items)}</div>
-    <div class="grid gap-3 mt-3">${chartHeat()}</div>
-    <div class="grid gap-3 lg:grid-cols-3 mt-3">${chartPhases()}${chartFeel(items)}${chartPace()}</div>`;
+    <div class="grid gap-3 lg:grid-cols-2 [&>*]:min-w-0">${chartKm(items)}${chartLong(items)}${chartHeat()}${chartPhases()}${chartFeel(items)}${chartPace()}</div>`;
   el.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => { chartPeriod = b.dataset.cp; renderCharts(); });
 }
 
