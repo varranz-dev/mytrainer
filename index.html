@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MyTrain · Media Maratón 2027</title>
+<title>MyTrainer · Media Maratón 2027</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#C6007E">
+<meta name="apple-mobile-web-app-title" content="MyTrainer">
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 /* ===== Tema "Medio Maratón Valencia" (magenta + azul marino) =====
@@ -730,27 +735,27 @@ function garminWorkout(d) {
   const deload = /descarga|\[Ajustada/i.test(d.desc || '');
   const n = x => deload ? Math.max(2, Math.round(x * 0.7)) : x;
   const key = (d.short || d.title || '').trim();
-  const base = { sport:'Carrera', name:`MyTrain · ${d.title}`, tip:'' };
+  const base = { sport:'Carrera', name:`MyTrainer · ${d.title}`, tip:'' };
 
   if (d.type === 'Bici') {
     const mins = parseInt((d.desc.match(/(\d+)-\d+'/) || [])[1] || '60', 10);
-    return { ...base, sport:'Ciclismo', name:'MyTrain · Bici recuperación Z2',
+    return { ...base, sport:'Ciclismo', name:'MyTrainer · Bici recuperación Z2',
       steps:[ S.wu('10:00', 'Zona FC 1'), ({ k:'Activo', dur:`${mins - 15}:00`, tgt:'Zona FC 2' }), S.cd('5:00', 'Zona FC 1') ],
       tip:'Cadencia alta (85-95 rpm), sin apretar.' };
   }
-  if (d.race) return { ...base, name:'MyTrain · Media Maratón 1:50',
+  if (d.race) return { ...base, name:'MyTrainer · Media Maratón 1:50',
     steps:[ S.run('5 km', '5:15-5:20 /km'), S.run('13 km', PACE.rc), S.run('3,1 km', 'Sin objetivo (lo que quede)') ],
     tip:'Alternativa: crea una estrategia PacePro para el recorrido (Entrenamiento y planificación → PacePro) con objetivo 1:50:00.' };
   if (/^Opcional/i.test(d.title)) {
     const mins = /20-25'/.test(d.desc) ? 25 : /20'/.test(d.desc) ? 20 : 35;
-    return { ...base, name:'MyTrain · Trote suave',
+    return { ...base, name:'MyTrainer · Trote suave',
       steps:[ S.run(`${mins}:00`, PACE.easy) ],
       tip:'Si eliges bici gravel no hace falta entrenamiento: inicia la actividad "Gravel"/"Ciclismo" y mantén Zona FC 2.' };
   }
   if (/^Larga/i.test(key) || /Tirada Larga/i.test(d.title)) {
     const km = kmNum((d.desc.match(/^([\d,\.]+) km/) || [])[1] || '8');
     const fast = parseInt((d.desc.match(/Últimos (\d+) km/) || [])[1] || '0', 10);
-    return { ...base, name:`MyTrain · Larga ${String(km).replace('.', ',')} km`,
+    return { ...base, name:`MyTrainer · Larga ${String(km).replace('.', ',')} km`,
       steps: fast ? [ S.run(`${String(km - fast).replace('.', ',')} km`, PACE.long), S.run(`${fast} km`, PACE.rc) ]
                   : [ S.run(`${String(km).replace('.', ',')} km`, PACE.long) ],
       tip:'Activa la alerta de ritmo solo como guía; en la tirada larga manda la sensación conversacional.' };
@@ -773,7 +778,7 @@ function garminWorkout(d) {
     '3 km RC':       () => [ S.wu('15:00'), S.run('3 km', PACE.rc), S.rep(4, [ S.run('0:20', 'Sin objetivo (alegre)'), S.rec('1:00', 'Caminando') ]), S.cd('10:00') ],
     'Activación':    () => [ S.run('20:00', PACE.easy), S.rep(4, [ S.run('1:00', PACE.rc), S.rec('1:00') ]) ],
   };
-  if (Q[key]) return { ...base, name:`MyTrain · ${key}`, steps: Q[key](),
+  if (Q[key]) return { ...base, name:`MyTrainer · ${key}`, steps: Q[key](),
     tip: deload ? 'Volumen reducido (descarga o sesión ajustada): las repeticiones ya están reducidas un 30%.' : '' };
   return { ...base, steps:[ S.run('Según descripción', 'Sin objetivo') ], tip: d.desc };
 }
