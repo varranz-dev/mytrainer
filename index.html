@@ -217,6 +217,10 @@
       <div class="band"><span>Sesiones de la semana</span><span class="flex items-center gap-3"><button id="btnWeekSum" class="text-indigo-700 font-bold">📊 Resumen</button><span id="progressLabel" class="text-indigo-700">0%</span></span></div>
       <div class="h-1 bg-slate-100"><div id="progressBar" class="h-1 bg-indigo-600 transition-all duration-500" style="width:0%"></div></div>
       <div id="viewWeek"></div>
+      <div class="flex flex-wrap gap-2 px-4 pt-3">
+        <label class="text-xs px-3 py-1.5 rounded-full border border-indigo-600 text-indigo-700 font-bold cursor-pointer">📥 Importar de Garmin<input id="bulkAct2" type="file" multiple accept=".fit,.tcx,.gpx,.zip" class="hidden"></label>
+        <button id="btnIcs2" class="text-xs px-3 py-1.5 rounded-full border border-indigo-600 text-indigo-700 font-bold">📅 Añadir al calendario</button>
+      </div>
       <p class="text-[11px] text-slate-400 px-4 py-3">Toca una sesión para registrarla, moverla o crearla en Garmin. Toca un día de la tira superior para marcarlo como no disponible.</p>
     </section>
 
@@ -268,6 +272,9 @@
       <button id="btnSettings2" class="row-btn">⚙️ Ajustes de sincronización</button>
       <p id="syncStatus" class="text-[11px] text-slate-400 px-4 py-2">Sin sincronizar · solo local</p>
       <div class="band"><span>Datos</span></div>
+      <label class="row-btn cursor-pointer">📥 Importar actividades de Garmin <span class="text-[12px] font-normal text-slate-400">(.fit · .tcx · .gpx · .zip, varias a la vez)</span>
+        <input id="bulkAct" type="file" multiple accept=".fit,.tcx,.gpx,.zip" class="hidden"></label>
+      <button id="btnIcs" class="row-btn">📅 Exportar sesiones a mi calendario (.ics)</button>
       <button id="btnExport" class="row-btn">⬇️ Exportar JSON</button>
       <label class="row-btn cursor-pointer">⬆️ Importar JSON <input id="fileImport" type="file" accept="application/json" class="hidden"></label>
       <button id="btnResetPlan" class="row-btn text-rose-600">↺ Regenerar plan completo</button>
@@ -307,6 +314,9 @@
       <button id="inHourReset" class="hidden text-xs text-indigo-700 underline">por defecto</button>
     </div>
     <div id="mWx"></div>
+    <div id="mAct"></div>
+    <label id="mImport" class="mt-3 block w-full text-center text-xs py-1.5 rounded-md border border-indigo-300 text-indigo-700 cursor-pointer hover:bg-indigo-50">📥 Importar la actividad desde Garmin (.fit · .tcx · .gpx · .zip)
+      <input id="actFile" type="file" accept=".fit,.tcx,.gpx,.zip" class="hidden"></label>
     <p id="mNote" class="text-xs text-amber-700 italic mt-1"></p>
     <div id="noteBox" class="mt-3">
       <label class="text-sm font-medium text-slate-700">📝 Notas <span class="text-slate-400 font-normal">(opcional)</span>
@@ -1242,7 +1252,7 @@ function renderHero() {
   const t = todayIso();
   document.getElementById('daysLeft').textContent = Math.max(0, Math.ceil((RACE_DATE - new Date().setHours(0,0,0,0)) / DAY_MS));
   const done = state.weeks.flatMap(w => w.days).filter(d => d.status === 'done' && !d.isRest);
-  const km = Math.round(done.reduce((a, d) => a + kmDone(d), 0));
+  const km = Math.round(done.reduce((a, d) => a + kmDone(d), 0) + extraKm());
   document.getElementById('statKm').textContent = km.toLocaleString('es-ES');
   document.getElementById('statSessions').textContent = done.length;
   document.getElementById('statStreak').textContent = streakWeeks();
@@ -1482,7 +1492,7 @@ function periodStats(from, to) {
 function renderYo() {
   const all = state.weeks.flatMap(w => w.days);
   const done = all.filter(d => d.status === 'done' && !d.isRest);
-  document.getElementById('yoKm').textContent = Math.round(done.reduce((a, d) => a + kmDone(d), 0)).toLocaleString('es-ES');
+  document.getElementById('yoKm').textContent = Math.round(done.reduce((a, d) => a + kmDone(d), 0) + extraKm()).toLocaleString('es-ES');
   const maxLong = Math.max(0, ...done.filter(isLongRun).map(kmOfShort));
   const raceDone = all.some(d => d.race && d.status === 'done');
   const B = [['1ª', 'sesión', done.length > 0], ['5K', 'tirada', maxLong >= 5], ['10K', 'tirada', maxLong >= 10], ['15K', 'tirada', maxLong >= 15], ['21K', 'meta', raceDone]];
@@ -1703,12 +1713,23 @@ function chartPace() {
   return card('Ritmo medio', 'Más arriba = más rápido', s, lg(CH.mag, 'Calidad', 'dot') + lg(CH.navy, 'Tirada larga', 'dot'));
 }
 
+/* 7 · Pulso en rodajes suaves (eficiencia aeróbica) */
+function chartHR() {
+  const q = state.weeks.flatMap(w => w.days).filter(d => d.status === 'done' && d.act?.hrAvg && d.type !== 'Bici' && (isLongRun(d) || isOptional(d) || /Rodaje/.test(d.short || '')));
+  if (q.length < 2) return card('Pulso en rodajes suaves', 'Eficiencia aeróbica', empty('Importa tus actividades de Garmin con pulsómetro<br>y verás si tu pulso baja al mismo ritmo.'));
+  const hrs = q.map(d => d.act.hrAvg), f = frame(q.length, Math.max(...hrs) + 6, { minV: Math.min(...hrs) - 6, fmt: v => Math.round(v) });
+  let s = f.open + `<path d="${q.map((d, k) => `${k ? 'L' : 'M'}${f.x(k)},${f.y(d.act.hrAvg)}`).join(' ')}" fill="none" stroke="${CH.mag}" stroke-width="2.5"/>`;
+  q.forEach((d, k) => s += `<circle cx="${f.x(k)}" cy="${f.y(d.act.hrAvg)}" r="5" fill="${isLongRun(d) ? CH.navy : CH.mag}" stroke="#fff" stroke-width="2"><title>${fmtDay(d)} · ${d.act.hrAvg} ppm a ${paceStr(d.act.time / (d.act.dist / 1000))}/km</title></circle>`);
+  q.forEach((d, k) => { if (k % Math.ceil(q.length / 8) === 0 || k === q.length - 1) s += `<text x="${f.x(k)}" y="${f.H - 8}" text-anchor="middle" font-size="11" fill="${CH.txt}">${fromIso(d.date).getDate()}/${fromIso(d.date).getMonth() + 1}</text>`; });
+  s += '</svg>';
+  return card('Pulso en rodajes suaves', 'Si baja con el mismo ritmo, tu base aeróbica mejora', s, lg(CH.mag, 'Rodaje', 'dot') + lg(CH.navy, 'Tirada larga', 'dot'));
+}
 function renderCharts() {
   const el = document.getElementById('chartsBox'); if (!el) return;
   const items = chartWeeks();
   const btn = (k, l) => `<button data-cp="${k}" class="px-3 py-1.5 rounded-full text-xs font-bold ${chartPeriod === k ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-300 text-slate-600'}">${l}</button>`;
   el.innerHTML = `<div class="flex flex-wrap items-center gap-2 mb-3">${btn('last8', 'Últimas 8 semanas')}${btn('phase', 'Fase actual')}${btn('all', 'Todo el plan')}</div>
-    <div class="grid gap-3 lg:grid-cols-2 [&>*]:min-w-0">${chartKm(items)}${chartLong(items)}${chartHeat()}${chartPhases()}${chartFeel(items)}${chartPace()}</div>`;
+    <div class="grid gap-3 lg:grid-cols-2 [&>*]:min-w-0">${chartKm(items)}${chartLong(items)}${chartHeat()}${chartPhases()}${chartFeel(items)}${chartPace()}${chartHR()}</div>`;
   el.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => { chartPeriod = b.dataset.cp; renderCharts(); });
 }
 
@@ -2429,6 +2450,227 @@ document.getElementById('sWxFind').onclick = async () => {
   } catch { box.innerHTML = '<p class="text-xs text-rose-600">Sin conexión.</p>'; }
 };
 
+/* =====================================================================
+   IMPORTAR ACTIVIDADES DE GARMIN (.fit, .tcx, .gpx o el .zip de "Exportar original")
+   ===================================================================== */
+const FIT_EPOCH = 631065600;
+function parseFIT(buf) {
+  const dv = new DataView(buf), hs = dv.getUint8(0), dataSize = dv.getUint32(4, true);
+  if (String.fromCharCode(...new Uint8Array(buf, 8, 4)) !== '.FIT') throw new Error('No es un archivo FIT');
+  const end = Math.min(hs + dataSize, buf.byteLength), defs = {}, out = { session: [], lap: [], record: [] };
+  const NAMES = { 18: 'session', 19: 'lap', 20: 'record' };
+  let p = hs, lastTs = 0;
+  const readVal = (off, size, bt, le) => {
+    const t = bt & 0x1F;
+    try {
+      switch (t) {
+        case 0: case 2: case 10: case 13: { const v = dv.getUint8(off); return (t === 10 ? v === 0 : v === 0xFF) ? null : v; }
+        case 1: { const v = dv.getInt8(off); return v === 0x7F ? null : v; }
+        case 3: { if (size < 2) return null; const v = dv.getInt16(off, le); return v === 0x7FFF ? null : v; }
+        case 4: case 11: { if (size < 2) return null; const v = dv.getUint16(off, le); return (t === 11 ? v === 0 : v === 0xFFFF) ? null : v; }
+        case 5: { if (size < 4) return null; const v = dv.getInt32(off, le); return v === 0x7FFFFFFF ? null : v; }
+        case 6: case 12: { if (size < 4) return null; const v = dv.getUint32(off, le); return (t === 12 ? v === 0 : v === 0xFFFFFFFF) ? null : v; }
+        case 8: return size >= 4 ? dv.getFloat32(off, le) : null;
+        case 9: return size >= 8 ? dv.getFloat64(off, le) : null;
+        default: return null;
+      }
+    } catch { return null; }
+  };
+  while (p < end) {
+    const h = dv.getUint8(p++);
+    if (h & 0x80) {                                     // cabecera de timestamp comprimido
+      const def = defs[(h >> 5) & 0x3]; if (!def) break;
+      const off = h & 0x1F; let ts = (lastTs & ~0x1F) + off; if (off < (lastTs & 0x1F)) ts += 0x20; lastTs = ts;
+      const msg = { 253: ts }; let q = p;
+      def.fields.forEach(f => { msg[f.num] ??= readVal(q, f.size, f.bt, def.le); q += f.size; });
+      p += def.size; if (def.name) out[def.name].push(msg);
+    } else if (h & 0x40) {                              // mensaje de definición
+      const local = h & 0x0F, hasDev = h & 0x20; p++;
+      const le = dv.getUint8(p++) === 0, gnum = dv.getUint16(p, le); p += 2;
+      const n = dv.getUint8(p++), fields = []; let size = 0;
+      for (let k = 0; k < n; k++) { const f = { num: dv.getUint8(p), size: dv.getUint8(p + 1), bt: dv.getUint8(p + 2) }; fields.push(f); size += f.size; p += 3; }
+      if (hasDev) { const nd = dv.getUint8(p++); for (let k = 0; k < nd; k++) { size += dv.getUint8(p + 1); p += 3; } }
+      defs[local] = { le, gnum, name: NAMES[gnum], fields, size };
+    } else {                                            // mensaje de datos
+      const def = defs[h & 0x0F]; if (!def) break;
+      const msg = {}; let q = p;
+      def.fields.forEach(f => { msg[f.num] = readVal(q, f.size, f.bt, def.le); q += f.size; });
+      if (msg[253] != null) lastTs = msg[253];
+      p += def.size; if (def.name) out[def.name].push(msg);
+    }
+  }
+  const s = out.session[0] || {};
+  const ts = v => v != null ? new Date((v + FIT_EPOCH) * 1000) : null;
+  const recs = out.record.filter(r => r[253] != null).map(r => ({ t: (r[253] + FIT_EPOCH) * 1000, d: r[5] != null ? r[5] / 100 : null,
+    hr: r[3], alt: r[78] != null ? r[78] / 5 - 500 : r[2] != null ? r[2] / 5 - 500 : null }));
+  const cad = s[18] != null ? s[18] * 2 : null;
+  return { sport: s[5] === 2 ? 'Bici' : 'Carrera', start: ts(s[2]) || (recs[0] ? new Date(recs[0].t) : null),
+    dist: s[9] != null ? s[9] / 100 : recs.at(-1)?.d, time: s[8] != null ? s[8] / 1000 : s[7] != null ? s[7] / 1000 : null,
+    hrAvg: s[16], hrMax: s[17], cad, ascent: s[22], cal: s[11], te: s[24] != null ? s[24] / 10 : null, teAn: s[137] != null ? s[137] / 10 : null,
+    laps: out.lap.map(l => ({ dist: l[9] != null ? l[9] / 100 : null, time: l[8] != null ? l[8] / 1000 : l[7] != null ? l[7] / 1000 : null, hr: l[15] })),
+    recs };
+}
+function haversine(a, b) {
+  const R = 6371000, r = x => x * Math.PI / 180, dLat = r(b.lat - a.lat), dLon = r(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const xnum = (el, sel) => { const e = el?.querySelector(sel); return e ? parseFloat(e.textContent) : null; };
+const byLocal = (el, name) => [...el.getElementsByTagName('*')].filter(e => e.localName === name);
+function parseTCX(txt) {
+  const x = new DOMParser().parseFromString(txt, 'application/xml'), act = byLocal(x, 'Activity')[0];
+  if (!act) throw new Error('TCX sin actividad');
+  const laps = byLocal(act, 'Lap'), tps = byLocal(act, 'Trackpoint');
+  const recs = tps.map(tp => ({ t: Date.parse(byLocal(tp, 'Time')[0]?.textContent), d: parseFloat(byLocal(tp, 'DistanceMeters')[0]?.textContent),
+    hr: parseFloat(byLocal(byLocal(tp, 'HeartRateBpm')[0] || tp, 'Value')[0]?.textContent) || null, alt: parseFloat(byLocal(tp, 'AltitudeMeters')[0]?.textContent) })).filter(r => r.t);
+  const L = laps.map(l => ({ dist: parseFloat(byLocal(l, 'DistanceMeters')[0]?.textContent), time: parseFloat(byLocal(l, 'TotalTimeSeconds')[0]?.textContent),
+    hr: parseFloat(byLocal(byLocal(l, 'AverageHeartRateBpm')[0] || l, 'Value')[0]?.textContent) || null,
+    hrMax: parseFloat(byLocal(byLocal(l, 'MaximumHeartRateBpm')[0] || l, 'Value')[0]?.textContent) || null,
+    cal: parseFloat(byLocal(l, 'Calories')[0]?.textContent) || 0, cad: parseFloat(byLocal(l, 'AvgRunCadence')[0]?.textContent) || null }));
+  const sum = k => L.reduce((a, l) => a + (l[k] || 0), 0), time = sum('time');
+  const hrAvg = time ? Math.round(L.reduce((a, l) => a + (l.hr || 0) * (l.time || 0), 0) / time) || null : null;
+  return { sport: /Biking/i.test(act.getAttribute('Sport')) ? 'Bici' : 'Carrera', start: new Date(byLocal(act, 'Id')[0]?.textContent || laps[0]?.getAttribute('StartTime')),
+    dist: sum('dist'), time, hrAvg, hrMax: Math.max(0, ...L.map(l => l.hrMax || 0)) || null, cal: sum('cal') || null,
+    cad: L.find(l => l.cad) ? Math.round(L.reduce((a, l) => a + (l.cad || 0) * (l.time || 0), 0) / time * 2) : null,
+    ascent: ascentOf(recs), laps: L.map(l => ({ dist: l.dist, time: l.time, hr: l.hr })), recs };
+}
+function parseGPX(txt) {
+  const x = new DOMParser().parseFromString(txt, 'application/xml'), pts = byLocal(x, 'trkpt');
+  if (!pts.length) throw new Error('GPX sin puntos');
+  let d = 0, prev = null;
+  const recs = pts.map(pt => { const lat = +pt.getAttribute('lat'), lon = +pt.getAttribute('lon');
+    if (prev) d += haversine(prev, { lat, lon }); prev = { lat, lon };
+    return { t: Date.parse(byLocal(pt, 'time')[0]?.textContent), d, hr: parseFloat(byLocal(pt, 'hr')[0]?.textContent) || null, alt: parseFloat(byLocal(pt, 'ele')[0]?.textContent),
+             cad: parseFloat(byLocal(pt, 'cad')[0]?.textContent) || null }; }).filter(r => r.t);
+  const hrs = recs.map(r => r.hr).filter(Boolean), cads = recs.map(r => r.cad).filter(Boolean);
+  return { sport: /cycl|bik/i.test(byLocal(x, 'type')[0]?.textContent || '') ? 'Bici' : 'Carrera', start: new Date(recs[0].t), dist: d, time: (recs.at(-1).t - recs[0].t) / 1000,
+    hrAvg: hrs.length ? Math.round(hrs.reduce((a, b) => a + b) / hrs.length) : null, hrMax: hrs.length ? Math.max(...hrs) : null,
+    cad: cads.length ? Math.round(cads.reduce((a, b) => a + b) / cads.length * 2) : null, ascent: ascentOf(recs), laps: [], recs };
+}
+function ascentOf(recs) {
+  let up = 0, ref = null;
+  recs.forEach(r => { if (r.alt == null || isNaN(r.alt)) return; if (ref == null) ref = r.alt; else if (r.alt - ref > 2) { up += r.alt - ref; ref = r.alt; } else if (r.alt < ref) ref = r.alt; });
+  return recs.some(r => r.alt != null && !isNaN(r.alt)) ? Math.round(up) : null;
+}
+/** Parciales por km y mejor 5K a partir de los puntos */
+function kmSplits(recs) {
+  const r = recs.filter(x => x.d != null && !isNaN(x.d)); if (r.length < 2) return [];
+  const out = []; let k = 1, last = r[0];
+  for (const x of r) { while (x.d >= k * 1000) { const prev = last, f = (k * 1000 - prev.d) / ((x.d - prev.d) || 1); out.push(prev.t + f * (x.t - prev.t)); k++; } last = x; }
+  const t0 = r[0].t; return out.map((t, i) => Math.round((t - (i ? out[i - 1] : t0)) / 1000));
+}
+function bestEffort(recs, meters) {
+  const r = recs.filter(x => x.d != null && !isNaN(x.d)); let best = null, j = 0;
+  for (let i = 0; i < r.length; i++) { while (j < r.length && r[j].d - r[i].d < meters) j++; if (j >= r.length) break;
+    const t = (r[j].t - r[i].t) / 1000; if (best == null || t < best) best = t; }
+  return best;
+}
+async function unzipFirst(buf) {
+  const dv = new DataView(buf); let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('ZIP no válido');
+  let p = dv.getUint32(eocd + 16, true); const n = dv.getUint16(eocd + 10, true);
+  for (let k = 0; k < n; k++) {
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lo = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(new Uint8Array(buf, p + 46, nl)); p += 46 + nl + el + cl;
+    if (!/\.(fit|tcx|gpx)$/i.test(name)) continue;
+    const start = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true), data = new Uint8Array(buf, start, csize);
+    if (method === 0) return { name, buf: data.slice().buffer };
+    const ds = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return { name, buf: await new Response(ds).arrayBuffer() };
+  }
+  throw new Error('El ZIP no contiene .fit, .tcx ni .gpx');
+}
+async function parseActivityFile(file) {
+  let name = file.name, buf = await file.arrayBuffer();
+  if (/\.zip$/i.test(name)) ({ name, buf } = await unzipFirst(buf));
+  const a = /\.fit$/i.test(name) ? parseFIT(buf) : /\.tcx$/i.test(name) ? parseTCX(new TextDecoder().decode(buf))
+          : /\.gpx$/i.test(name) ? parseGPX(new TextDecoder().decode(buf)) : (() => { throw new Error('Formato no soportado'); })();
+  if (!a.dist || !a.time) throw new Error('La actividad no tiene distancia o tiempo');
+  const splits = kmSplits(a.recs || []), best5 = bestEffort(a.recs || [], 5000);
+  const { recs, ...rest } = a;
+  return { ...rest, start: a.start?.toISOString?.() || null, splits, best5, file: file.name };
+}
+/** Aplica una actividad a una sesión y la marca como hecha */
+function applyActivity(d, act) {
+  d.act = act;
+  d.realKm = Math.round(act.dist / 10) / 100;
+  d.realPace = Math.round(act.time / (act.dist / 1000));
+  if (d.race && act.dist > 20000) { d.realTime = Math.round(act.time); }
+  if (d.isTest && act.best5) { d.realTime = Math.round(act.best5); registerTest(d, d.realTime); }
+  if (d.status !== 'done') Object.assign(d, { status: 'done', result: 'done' });
+  if (isLongRun(d)) replanLongRuns();
+}
+const actDate = act => act.start ? iso(new Date(act.start)) : null;
+async function importFiles(files, target = null) {
+  const res = [];
+  for (const f of files) {
+    try {
+      const act = await parseActivityFile(f), date = actDate(act);
+      let d = target;
+      if (!d) { const fd = date && findDate(date); d = fd && !fd.d.isRest ? fd.d : null; }
+      if (d) { applyActivity(d, act); res.push(`✅ ${fmtShort(fromIso(date || d.date))}: ${fmtKm(Math.round(act.dist / 100) / 10)} km → ${d.title}`); }
+      else { state.extraActs = (state.extraActs || []).filter(x => x.start !== act.start); state.extraActs.push(act);
+        res.push(`➕ ${date ? fmtShort(fromIso(date)) : '¿?'}: ${fmtKm(Math.round(act.dist / 100) / 10)} km sin sesión ese día (se suma a tus km)`); }
+    } catch (e) { res.push(`⚠️ ${f.name}: ${e.message}`); }
+  }
+  commit();
+  notify(`📥 Importación de Garmin:\n${res.join('\n')}`, res.some(r => r.startsWith('⚠️')) ? 'warn' : 'ok', 12000);
+}
+const extraKm = () => (state.extraActs || []).reduce((a, x) => a + x.dist / 1000, 0);
+function actCardHtml(d) {
+  const a = d.act; if (!a) return '';
+  const pace = a.time / (a.dist / 1000), cell = (v, l) => v == null ? '' : `<div class="rounded-lg bg-slate-50 p-2 text-center"><p class="font-bold text-slate-900">${v}</p><p class="text-[11px] text-slate-500">${l}</p></div>`;
+  const laps = (a.laps || []).filter(l => l.dist && l.time);
+  return `<div class="mt-3 rounded-xl border border-slate-200 p-3">
+    <p class="text-sm font-semibold text-slate-800">⌚ Actividad importada <span class="font-normal text-slate-400">· ${escapeHtml(a.file || '')}</span></p>
+    <div class="grid grid-cols-3 gap-2 mt-2 text-sm">
+      ${cell(fmtKm(Math.round(a.dist / 10) / 100) + ' km', 'distancia')}${cell(fmtHMS(a.time), 'tiempo')}${cell(paceStr(pace) + '/km', 'ritmo medio')}
+      ${cell(a.hrAvg ? a.hrAvg + ' ppm' : null, 'FC media')}${cell(a.hrMax ? a.hrMax + ' ppm' : null, 'FC máxima')}${cell(a.cad ? a.cad + ' ppm' : null, 'cadencia')}
+      ${cell(a.ascent != null ? a.ascent + ' m' : null, 'desnivel +')}${cell(a.cal ? Math.round(a.cal) + ' kcal' : null, 'calorías')}${cell(a.te ? `${a.te.toFixed(1)}${a.teAn ? ' / ' + a.teAn.toFixed(1) : ''}` : null, 'efecto aer./anaer.')}
+      ${cell(a.best5 && a.dist >= 5000 ? fmtHMS(a.best5) : null, 'mejor 5 km')}
+    </div>
+    ${laps.length > 1 ? `<details class="mt-2"><summary class="text-sm font-semibold text-indigo-700 cursor-pointer">Vueltas (${laps.length})</summary>
+      <table class="w-full text-[13px] mt-1"><tr class="text-slate-400 text-left"><th>#</th><th>Dist.</th><th>Tiempo</th><th>Ritmo</th><th>FC</th></tr>
+      ${laps.map((l, i) => `<tr class="border-t border-slate-100"><td>${i + 1}</td><td>${l.dist >= 1000 ? fmtKm(Math.round(l.dist / 10) / 100) + ' km' : Math.round(l.dist) + ' m'}</td><td>${fmtHMS(l.time)}</td><td>${paceStr(l.time / (l.dist / 1000))}</td><td>${l.hr || ''}</td></tr>`).join('')}</table></details>` : ''}
+    ${a.splits?.length ? `<details class="mt-1"><summary class="text-sm font-semibold text-indigo-700 cursor-pointer">Parciales por km (${a.splits.length})</summary>
+      <div class="flex flex-wrap gap-1 mt-1">${a.splits.map((t, i) => `<span class="text-[12px] px-2 py-0.5 rounded bg-slate-100">${i + 1}: ${paceStr(t)}</span>`).join('')}</div></details>` : ''}
+  </div>`;
+}
+
+/* =====================================================================
+   CALENDARIO (.ics) con recordatorio la víspera
+   ===================================================================== */
+function icsEscape(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+const icsLocal = (dateIso, hhmm) => dateIso.replace(/-/g, '') + 'T' + hhmm.replace(':', '') + '00';
+const icsUtc = dt => dt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+function sessionMinutes(d) {
+  const steps = garminWorkout(d).steps, sum = st => st.reduce((a, s) => s.k === 'Repetir' ? a + s.n * sum(s.steps) : a + (/^\d+:\d\d$/.test(s.dur) ? +s.dur.split(':')[0] + +s.dur.split(':')[1] / 60 : 0), 0);
+  const km = estKm({ ...d, result: null }); return Math.max(20, Math.round(Math.max(sum(steps), km * 6.3) / 5) * 5);
+}
+function exportICS() {
+  const t = todayIso(), days = state.weeks.flatMap(w => w.days).filter(d => !d.isRest && !d.blocked && d.date >= t && d.status !== 'done' && d.status !== 'failed');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MyTrainer//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:MyTrainer · Media Maratón', 'X-WR-TIMEZONE:Europe/Madrid'];
+  days.forEach(d => {
+    const h = sessionHour(d), mins = d.race ? 150 : sessionMinutes(d);
+    const [hh, mm] = h.split(':').map(Number), endT = hh * 60 + mm + mins;
+    const end = `${String(Math.floor(endT / 60) % 24).padStart(2, '0')}:${String(endT % 60).padStart(2, '0')}`;
+    const eve = fromIso(iso(addDays(fromIso(d.date), -1))); eve.setHours(20, 0, 0, 0);
+    const steps = stepsToText(garminWorkout(d).steps);
+    lines.push('BEGIN:VEVENT', `UID:mytrainer-${d.date.replace(/-/g, '')}@mytrainer`, `DTSTAMP:${icsUtc(new Date())}`,
+      `DTSTART;TZID=Europe/Madrid:${icsLocal(d.date, h)}`, `DTEND;TZID=Europe/Madrid:${icsLocal(d.date, end)}`,
+      `SUMMARY:${icsEscape((d.race ? '🏁 ' : isOptional(d) ? '🏃 (opc.) ' : '🏃 ') + d.title.replace(/^Opcional: /, ''))}`,
+      `DESCRIPTION:${icsEscape(paceText(d.desc, heatAdjFor(d)) + '\n\nPasos para Garmin:\n' + steps)}`,
+      `LOCATION:${icsEscape(d.race ? 'Valencia' : wxLoc().name)}`,
+      'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape('Mañana: ' + d.title.replace(/^Opcional: /, '') + ' a las ' + h)}`, `TRIGGER;VALUE=DATE-TIME:${icsUtc(eve)}`, 'END:VALARM',
+      'END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' }), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'mytrainer.ics'; a.click();
+  notify(`📅 Calendario exportado con ${days.length} sesiones. Ábrelo para añadirlo a tu calendario.`, 'ok', 7000);
+}
+
 /* ---- Navegación ---- */
 function setView(v) {
   config.view = v; localStorage.setItem(LS_CFG, JSON.stringify(config));
@@ -2466,7 +2708,7 @@ function notify(msg, kind = 'info', timeout = 7000) {
                    ok:'bg-emerald-50 border-emerald-300 text-emerald-800', err:'bg-rose-50 border-rose-300 text-rose-800' };
   const el = document.createElement('div');
   el.className = `fade-in border rounded-lg px-4 py-2 text-sm flex justify-between gap-3 ${colors[kind]}`;
-  el.innerHTML = `<span>${escapeHtml(msg)}</span><button class="opacity-60 hover:opacity-100">×</button>`;
+  el.innerHTML = `<span class="whitespace-pre-line">${escapeHtml(msg)}</span><button class="opacity-60 hover:opacity-100">×</button>`;
   el.querySelector('button').onclick = () => el.remove();
   document.getElementById('notifications').prepend(el);
   if (timeout) setTimeout(() => el.remove(), timeout);
@@ -2500,6 +2742,8 @@ function openModal(w, i) {
   document.getElementById('inHour').value = sessionHour(d);
   document.getElementById('inHourReset').classList.toggle('hidden', !d.time);
   mWx.querySelectorAll('[data-wxmove]').forEach(b => b.onclick = () => { moveSession(d.date, b.dataset.wxmove); closeModal(); });
+  document.getElementById('mAct').innerHTML = actCardHtml(d);
+  document.getElementById('mImport').classList.toggle('hidden', d.isRest);
   document.getElementById('noteBox').classList.toggle('hidden', d.isRest);
   document.getElementById('inNote').value = d.userNote || '';
   document.getElementById('mNoteSave').classList.toggle('hidden', editable || d.isRest);
@@ -2582,6 +2826,12 @@ document.getElementById('inHour').onchange = e => {
   commit(); openModal(modalRef.w, modalRef.i);
 };
 document.getElementById('inHourReset').onclick = () => { const d = state.weeks[modalRef.w].days[modalRef.i]; d.time = null; commit(); openModal(modalRef.w, modalRef.i); };
+document.getElementById('actFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  await importFiles([f], state.weeks[modalRef.w].days[modalRef.i]); openModal(modalRef.w, modalRef.i);
+};
+['bulkAct', 'bulkAct2'].forEach(id => document.getElementById(id).onchange = async e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) await importFiles(fs); });
+['btnIcs', 'btnIcs2'].forEach(id => document.getElementById(id).onclick = exportICS);
 document.getElementById('mNoteSave').onclick = () => {
   const d = state.weeks[modalRef.w].days[modalRef.i];
   d.userNote = document.getElementById('inNote').value.trim() || null; commit(); notify('📝 Nota guardada.', 'ok', 2500);
@@ -2644,7 +2894,7 @@ document.getElementById('mUndo').onclick = () => {
     const next = state.weeks.flatMap(x => x.days).find(d => d.date > ud.date && /^Calidad/.test(d.title) && d.note === 'Suavizada por sesión de calidad perdida');
     if (next && next.status !== 'done') { next.desc = next.desc.replace(ADJ_PREFIX, ''); next.note = null; }
   }
-  Object.assign(ud, { status:'pending', result:null, feel:null, realKm:null, realPace:null, realTime:null });
+  Object.assign(ud, { status:'pending', result:null, feel:null, realKm:null, realPace:null, realTime:null, act:null });
   if (ud.isTest) state.tests = (state.tests || []).filter(t => t.date !== ud.date);
   replanLongRuns();
   commit(); closeModal();
